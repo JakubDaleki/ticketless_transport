@@ -1,0 +1,75 @@
+version: '3.9'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: ./deploy/Dockerfile
+      target: prod
+    image: ticketless_transport:${TICKETLESS_TRANSPORT_VERSION:-latest}
+    restart: always
+    env_file:
+    - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      rmq:
+        condition: service_healthy
+    environment:
+      TICKETLESS_TRANSPORT_HOST: 0.0.0.0
+      TICKETLESS_TRANSPORT_DB_HOST: ticketless_transport-db
+      TICKETLESS_TRANSPORT_DB_PORT: 5432
+      TICKETLESS_TRANSPORT_DB_USER: ticketless_transport
+      TICKETLESS_TRANSPORT_DB_PASS: ticketless_transport
+      TICKETLESS_TRANSPORT_DB_BASE: ticketless_transport
+      TICKETLESS_TRANSPORT_RABBIT_HOST: ticketless_transport-rmq
+
+  db:
+    image: postgres:13.8-bullseye
+    hostname: ticketless_transport-db
+    environment:
+      POSTGRES_PASSWORD: "ticketless_transport"
+      POSTGRES_USER: "ticketless_transport"
+      POSTGRES_DB: "ticketless_transport"
+    volumes:
+    - ticketless_transport-db-data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: pg_isready -U ticketless_transport
+      interval: 2s
+      timeout: 3s
+      retries: 40
+
+  migrator:
+    image: ticketless_transport:${TICKETLESS_TRANSPORT_VERSION:-latest}
+    restart: "no"
+    command: alembic upgrade head
+    environment:
+      TICKETLESS_TRANSPORT_DB_HOST: ticketless_transport-db
+      TICKETLESS_TRANSPORT_DB_PORT: 5432
+      TICKETLESS_TRANSPORT_DB_USER: ticketless_transport
+      TICKETLESS_TRANSPORT_DB_PASS: ticketless_transport
+      TICKETLESS_TRANSPORT_DB_BASE: ticketless_transport
+    depends_on:
+      db:
+        condition: service_healthy
+
+  rmq:
+    image: rabbitmq:3.9.16-alpine
+    hostname: "ticketless_transport-rmq"
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: "guest"
+      RABBITMQ_DEFAULT_PASS: "guest"
+      RABBITMQ_DEFAULT_VHOST: "/"
+    healthcheck:
+      test: rabbitmq-diagnostics check_running -q
+      interval: 3s
+      timeout: 3s
+      retries: 50
+
+
+
+volumes:
+  ticketless_transport-db-data:
+    name: ticketless_transport-db-data
